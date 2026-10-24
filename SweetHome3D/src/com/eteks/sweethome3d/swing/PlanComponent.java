@@ -1955,7 +1955,7 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
    * to make it fill <code>pageFormat</code> imageable size.
    */
   public float getPrintPreferredScale(Graphics g, PageFormat pageFormat) {
-    List<Selectable> printedItems = getPaintedItems(); 
+    List<Selectable> printedItems = getPrintedItems();
     Rectangle2D printedItemBounds = getItemsBounds(g, printedItems);
     if (printedItemBounds != null) {
       float imageableWidthCm = LengthUnit.inchToCentimeter((float)pageFormat.getImageableWidth() / 72);
@@ -2022,7 +2022,7 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
    * that makes it fill <code>pageFormat</code> imageable size if this attribute is <code>null</code>.
    */
   public int print(Graphics g, PageFormat pageFormat, int pageIndex) {
-    List<Selectable> printedItems = getPaintedItems(); 
+    List<Selectable> printedItems = getPrintedItems();
     Rectangle2D printedItemBounds = getItemsBounds(g, printedItems);
     if (printedItemBounds != null) {
       double imageableX = pageFormat.getImageableX();
@@ -2085,7 +2085,8 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
       g2D.dispose();
       return PAGE_EXISTS;
     } else {
-      return NO_SUCH_PAGE;
+      // A viewable level still gets its own plan page even when it contains no items.
+      return pageIndex == 0 ? PAGE_EXISTS : NO_SUCH_PAGE;
     }
   }
   
