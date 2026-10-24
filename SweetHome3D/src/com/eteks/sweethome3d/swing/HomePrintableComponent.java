@@ -123,9 +123,6 @@ public class HomePrintableComponent extends JComponent implements Printable {
   private final Font           headerFooterFont;
   private int                  page;
   private int                  pageCount = -1;
-  private Set<Integer>         printablePages = new HashSet<Integer>();
-  private int                  furniturePageCount;
-  private int                  planPageCount;
   private Date                 printDate;
   private JLabel               fixedHeaderLabel;
   private JLabel               fixedFooterLabel;
@@ -182,7 +179,23 @@ public class HomePrintableComponent extends JComponent implements Printable {
    * Prints a given <code>page</code>.
    */
   public int print(Graphics g, PageFormat pageFormat, int page) throws PrinterException {
-    // Check current thread isn't interrupted
+      Level originalSelectedLevel = this.home.getSelectedLevel();
+      try {
+        PageFormat contentPageFormat = getContentPageFormat(pageFormat, page);
+        PageRoute route = getPageRoute(contentPageFormat, page);
+        if (route.level != null) {
+          this.home.setSelectedLevel(route.level);
+        }
+        return printPage(g, pageFormat, page, route);
+      } finally {
+        if (this.home.getSelectedLevel() != originalSelectedLevel) {
+          this.home.setSelectedLevel(originalSelectedLevel);
+        }
+      }
+    }
+
+  private int printPage(Graphics g, PageFormat pageFormat, int page, PageRoute route) throws PrinterException {
+
     if (Thread.interrupted()) {
       throw new InterruptedPrinterException();
     }
@@ -343,60 +356,14 @@ public class HomePrintableComponent extends JComponent implements Printable {
     }
     
     View furnitureView = this.controller.getFurnitureController().getView();
-    if (furnitureView != null 
-        && (homePrint == null || homePrint.isFurniturePrinted())) {
-      FurnitureTable furnitureTable = null;
-      final FurnitureTable.FurnitureFilter furnitureFilter;
-      if (furnitureView instanceof FurnitureTable
-          && (homePrint == null
-              || homePrint.isPlanPrinted()
-              || homePrint.isView3DPrinted())) {
-        final Level selectedLevel = home.getSelectedLevel();
-        furnitureTable = (FurnitureTable)furnitureView;
-        furnitureFilter = furnitureTable.getFurnitureFilter();
-        furnitureTable.setFurnitureFilter(new FurnitureTable.FurnitureFilter() {
-            public boolean include(Home home, HomePieceOfFurniture piece) {
-              // Print only furniture at selected level when the plan or the 3D view is printed
-              return (furnitureFilter == null || furnitureFilter.include(home, piece))
-                  && piece.isAtLevel(selectedLevel)
-                  && (piece.getLevel() == null || piece.getLevel().isViewable());
-            }
-          });
-      } else {
-        furnitureFilter = null;
-      }
-      // Try to print next furniture view page      
-      pageExists = ((Printable)furnitureView).print(g2D, pageFormat, page);
-      if (furnitureTable != null) {
-        // Restore previous filter
-        ((FurnitureTable)furnitureView).setFurnitureFilter(furnitureFilter);
-      }
-      if (pageExists == PAGE_EXISTS
-          && !this.printablePages.contains(page)) {
-        this.printablePages.add(page);
-        this.furniturePageCount++;
-      }
-    }
-    if (pageExists == NO_SUCH_PAGE 
-        && planView != null 
-        && (homePrint == null || homePrint.isPlanPrinted())) {
-      // Try to print next plan view page
-      pageExists = ((Printable)planView).print(g2D, pageFormat, page - this.furniturePageCount);
-      if (pageExists == PAGE_EXISTS
-          && !this.printablePages.contains(page)) {
-        this.printablePages.add(page);
-        this.planPageCount++;
-      }
-    }
     View view3D = this.controller.getHomeController3D().getView();
-    if (pageExists == NO_SUCH_PAGE
-        && view3D != null
-        && (homePrint == null || homePrint.isView3DPrinted())) {
-      pageExists = ((Printable)view3D).print(g2D, pageFormat, page - this.planPageCount - this.furniturePageCount);
-      if (pageExists == PAGE_EXISTS
-          && !this.printablePages.contains(page)) {
-        this.printablePages.add(page);
-      }
+
+    if (route.furniturePage && furnitureView instanceof Printable) {
+      pageExists = printFurniturePage(furnitureView, g2D, pageFormat, route.localPageIndex);
+    } else if (route.planPage && planView != null) {
+      pageExists = ((Printable)planView).print(g2D, pageFormat, route.localPageIndex);
+    } else if (route.view3DPage && view3D instanceof Printable) {
+      pageExists = ((Printable)view3D).print(g2D, pageFormat, route.localPageIndex);
     }
     
     // Print header and footer
@@ -425,6 +392,258 @@ public class HomePrintableComponent extends JComponent implements Printable {
     pageFormat.setPaper(oldPaper);    
     return pageExists;
   }
+
+
+  /** Describes the printable section and local page selected for a global page index. */
+  private static class PageRoute {
+    private boolean furniturePage;
+    private boolean planPage;
+    private boolean view3DPage;
+    private int localPageIndex;
+    private Level level;
+  }
+
+  /**
+   * Determines which section and level should be printed for page.
+   */
+  private PageRoute getPageRoute(PageFormat pageFormat, int page) throws PrinterException {
+    PageRoute route = new PageRoute();
+    if (page < 0) {
+      return route;
+    }
+
+    HomePrint homePrint = this.home.getPrint();
+    View furnitureView = this.controller.getFurnitureController().getView();
+    PlanView planView = this.controller.getPlanController().getView();
+    View view3D = this.controller.getHomeController3D().getView();
+
+    boolean printFurniture = furnitureView instanceof Printable
+            && (homePrint == null || homePrint.isFurniturePrinted());
+    boolean printPlan = planView instanceof Printable
+            && (homePrint == null || homePrint.isPlanPrinted());
+    boolean print3D = view3D instanceof Printable
+            && (homePrint == null || homePrint.isView3DPrinted());
+
+    BufferedImage dummyImage = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+    Graphics dummyGraphics = dummyImage.getGraphics();
+
+    try {
+      int furniturePages = printFurniture
+              ? countFurniturePages(furnitureView, dummyGraphics, pageFormat) : 0;
+
+      if (page < furniturePages) {
+        route.furniturePage = true;
+        route.localPageIndex = page;
+        return route;
+      }
+
+      int planPageIndex = page - furniturePages;
+
+      if (printPlan) {
+        Level originalSelectedLevel = this.home.getSelectedLevel();
+        try {
+          for (Level level : this.home.getLevels()) {
+            if (!level.isViewable()) {
+              continue;
+            }
+
+            this.home.setSelectedLevel(level);
+            int levelPages = Math.max(
+                    1, countPages((Printable)planView, dummyGraphics, pageFormat));
+
+            if (planPageIndex < levelPages) {
+              route.planPage = true;
+              route.localPageIndex = planPageIndex;
+              route.level = level;
+              return route;
+            }
+
+            planPageIndex -= levelPages;
+          }
+        } finally {
+          this.home.setSelectedLevel(originalSelectedLevel);
+        }
+      }
+
+      int planPages = 0;
+      if (printPlan) {
+        Level originalSelectedLevel = this.home.getSelectedLevel();
+        try {
+          for (Level level : this.home.getLevels()) {
+            if (level.isViewable()) {
+              this.home.setSelectedLevel(level);
+              planPages += Math.max(1, countPages((Printable)planView, dummyGraphics, pageFormat));
+            }
+          }
+        } finally {
+          this.home.setSelectedLevel(originalSelectedLevel);
+        }
+      }
+
+      int view3DPageIndex = page - furniturePages - planPages;
+      if (print3D && view3DPageIndex >= 0) {
+        route.view3DPage = true;
+        route.localPageIndex = view3DPageIndex;
+      }
+
+      return route;
+    } finally {
+      dummyGraphics.dispose();
+    }
+  }
+
+  /**
+   * Prints a furniture page with furniture on all viewable levels.
+   */
+  private int printFurniturePage(View furnitureView, Graphics graphics,
+                                 PageFormat pageFormat, int pageIndex)
+          throws PrinterException {
+    if (furnitureView instanceof FurnitureTable) {
+      FurnitureTable table = (FurnitureTable)furnitureView;
+      final FurnitureTable.FurnitureFilter oldFilter = table.getFurnitureFilter();
+
+      table.setFurnitureFilter(getViewableFurnitureFilter(oldFilter));
+      try {
+        return ((Printable)furnitureView).print(graphics, pageFormat, pageIndex);
+      } finally {
+        table.setFurnitureFilter(oldFilter);
+      }
+    }
+
+    return ((Printable)furnitureView).print(graphics, pageFormat, pageIndex);
+  }
+
+  /**
+   * Counts furniture pages using the same filter as actual printing.
+   */
+  private int countFurniturePages(View furnitureView, Graphics graphics,
+                                  PageFormat pageFormat) throws PrinterException {
+    if (furnitureView instanceof FurnitureTable) {
+      FurnitureTable table = (FurnitureTable)furnitureView;
+      final FurnitureTable.FurnitureFilter oldFilter = table.getFurnitureFilter();
+
+      table.setFurnitureFilter(getViewableFurnitureFilter(oldFilter));
+      try {
+        return countPages((Printable)furnitureView, graphics, pageFormat);
+      } finally {
+        table.setFurnitureFilter(oldFilter);
+      }
+    }
+
+    return countPages((Printable)furnitureView, graphics, pageFormat);
+  }
+
+  /**
+   * Preserves any existing furniture filter while excluding hidden levels.
+   */
+  private FurnitureTable.FurnitureFilter getViewableFurnitureFilter(
+          final FurnitureTable.FurnitureFilter previousFilter) {
+    return new FurnitureTable.FurnitureFilter() {
+      public boolean include(Home home, HomePieceOfFurniture piece) {
+        Level level = piece.getLevel();
+        return (previousFilter == null || previousFilter.include(home, piece))
+                && (level == null || level.isViewable());
+      }
+    };
+  }
+
+  /**
+   * Counts pages for a printable using the supplied page format.
+   */
+  private int countPages(Printable printable, Graphics graphics,
+                         PageFormat pageFormat) throws PrinterException {
+    int count = 0;
+
+    while (true) {
+      Graphics pageGraphics = graphics.create();
+      int pageExists;
+
+      try {
+        pageExists = printable.print(
+                pageGraphics, (PageFormat)pageFormat.clone(), count);
+      } finally {
+        pageGraphics.dispose();
+      }
+
+      if (pageExists != Printable.PAGE_EXISTS) {
+        break;
+      }
+
+      count++;
+    }
+
+    return count;
+  }
+
+  /**
+   * Returns a page format with header and footer space removed.
+   */
+  private PageFormat getContentPageFormat(PageFormat sourcePageFormat, int page) {
+    PageFormat pageFormat = (PageFormat)sourcePageFormat.clone();
+    HomePrint homePrint = this.home.getPrint();
+
+    float imageableY = (float)pageFormat.getImageableY();
+    float imageableHeight = (float)pageFormat.getImageableHeight();
+
+    JLabel fixedHeaderPageLabel = page == 0
+            ? this.fixedFirstPageHeaderLabel : this.fixedHeaderLabel;
+    JLabel fixedFooterPageLabel = page == 0
+            ? this.fixedFirstPageFooterLabel : this.fixedFooterLabel;
+
+    if (fixedHeaderPageLabel != null) {
+      imageableHeight -= fixedHeaderPageLabel.getPreferredSize().height
+              + HEADER_FOOTER_MARGIN;
+      imageableY += fixedHeaderPageLabel.getPreferredSize().height
+              + HEADER_FOOTER_MARGIN;
+    }
+
+    if (fixedFooterPageLabel != null) {
+      imageableHeight -= fixedFooterPageLabel.getPreferredSize().height
+              + HEADER_FOOTER_MARGIN;
+    }
+
+    if (homePrint != null) {
+      BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+      Graphics graphics = image.getGraphics();
+      FontMetrics fontMetrics = graphics.getFontMetrics(this.headerFooterFont);
+      float headerFooterHeight = fontMetrics.getAscent()
+              + fontMetrics.getDescent() + HEADER_FOOTER_MARGIN;
+      graphics.dispose();
+
+      String headerFormat = homePrint.getHeaderFormat();
+      if (headerFormat != null && headerFormat.trim().length() > 0) {
+        imageableY += headerFooterHeight;
+        imageableHeight -= headerFooterHeight;
+      }
+
+      String footerFormat = homePrint.getFooterFormat();
+      if (footerFormat != null && footerFormat.trim().length() > 0) {
+        imageableHeight -= headerFooterHeight;
+      }
+    }
+
+    Paper paper = pageFormat.getPaper();
+    switch (pageFormat.getOrientation()) {
+      case PageFormat.PORTRAIT:
+        paper.setImageableArea(paper.getImageableX(), imageableY,
+                paper.getImageableWidth(), imageableHeight);
+        break;
+
+      case PageFormat.LANDSCAPE:
+        paper.setImageableArea(
+                paper.getWidth() - (imageableHeight + imageableY),
+                paper.getImageableY(), imageableHeight, paper.getImageableHeight());
+
+      case PageFormat.REVERSE_LANDSCAPE:
+        paper.setImageableArea(imageableY, paper.getImageableY(),
+                imageableHeight, paper.getImageableHeight());
+        break;
+    }
+
+    pageFormat.setPaper(paper);
+    return pageFormat;
+  }
+
 
   /**
    * Returns the preferred size of this component according to paper orientation and size

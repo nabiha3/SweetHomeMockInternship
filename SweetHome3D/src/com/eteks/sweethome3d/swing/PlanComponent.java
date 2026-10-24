@@ -1634,7 +1634,21 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
   protected List<Selectable> getPaintedItems() {
     return this.home.getSelectableViewableItems();
   }
-  
+
+  /**
+   * Returns the items printed for the currently selected level.
+   * Unlike getPaintedItems(), this method excludes items belonging to other levels.
+   */
+  private List<Selectable> getPrintedItems() {
+    List<Selectable> printedItems = new ArrayList<Selectable>();
+    for (Selectable item : getPaintedItems()) {
+      if (!(item instanceof Elevatable) || isViewableAtSelectedLevel((Elevatable)item)) {
+        printedItems.add(item);
+      }
+    }
+    return printedItems;
+  }
+
   /**
    * Returns the bounds of the given collection of <code>items</code>.
    */
@@ -1941,7 +1955,7 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
    * to make it fill <code>pageFormat</code> imageable size.
    */
   public float getPrintPreferredScale(Graphics g, PageFormat pageFormat) {
-    List<Selectable> printedItems = getPaintedItems(); 
+    List<Selectable> printedItems = getPrintedItems();
     Rectangle2D printedItemBounds = getItemsBounds(g, printedItems);
     if (printedItemBounds != null) {
       float imageableWidthCm = LengthUnit.inchToCentimeter((float)pageFormat.getImageableWidth() / 72);
@@ -2002,13 +2016,80 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
     }
     return strokeWidth;
   }
+
+  @Override
+  public int print(Graphics g, PageFormat pageFormat, int pageIndex) {
+    Level originalLevel = this.home.getSelectedLevel();
+
+    try {
+      int currentPage = 0;
+
+      for (Level level : this.home.getLevels()) {
+        if (!level.isViewable()) {
+          continue;
+        }
+
+        this.home.setSelectedLevel(level);
+
+        int levelPageCount = getLevelPageCount(g, pageFormat);
+
+        if (pageIndex < currentPage + levelPageCount) {
+          return printSelectedLevel(
+                  g, pageFormat, pageIndex - currentPage);
+        }
+
+        currentPage += levelPageCount;
+      }
+
+      return NO_SUCH_PAGE;
+    } finally {
+      this.home.setSelectedLevel(originalLevel);
+    }
+  }
+
+  /**
+   /**
+   * Returns the number of pages required to print the currently selected level.
+   * If the level has no printable items or no print scale is configured,
+   * one page is allocated for the level.
+   */
+
+  private int getLevelPageCount(Graphics g, PageFormat pageFormat) {
+    List<Selectable> printedItems = getPrintedItems();
+    Rectangle2D bounds = getItemsBounds(g, printedItems);
+
+    // Even an empty viewable level gets one page.
+    if (bounds == null) {
+      return 1;
+    }
+
+    // Without a configured scale, each level fits on one page.
+    if (this.home.getPrint() == null
+            || this.home.getPrint().getPlanScale() == null) {
+      return 1;
+    }
+
+    double printScale =
+            this.home.getPrint().getPlanScale().doubleValue()
+                    * LengthUnit.centimeterToInch(72);
+
+    int pagesPerRow = Math.max(1, (int) Math.ceil(
+            bounds.getWidth() * printScale
+                    / pageFormat.getImageableWidth()));
+
+    int pagesPerColumn = Math.max(1, (int) Math.ceil(
+            bounds.getHeight() * printScale
+                    / pageFormat.getImageableHeight()));
+
+    return pagesPerRow * pagesPerColumn;
+  }
   
   /**
    * Prints this component plan at the scale given in the home print attributes or at a scale 
    * that makes it fill <code>pageFormat</code> imageable size if this attribute is <code>null</code>.
    */
-  public int print(Graphics g, PageFormat pageFormat, int pageIndex) {
-    List<Selectable> printedItems = getPaintedItems(); 
+  private int printSelectedLevel(Graphics g, PageFormat pageFormat, int pageIndex)  {
+    List<Selectable> printedItems = getPrintedItems();
     Rectangle2D printedItemBounds = getItemsBounds(g, printedItems);
     if (printedItemBounds != null) {
       double imageableX = pageFormat.getImageableX();
@@ -2071,7 +2152,8 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
       g2D.dispose();
       return PAGE_EXISTS;
     } else {
-      return NO_SUCH_PAGE;
+      // A viewable level still gets its own plan page even when it contains no items.
+      return pageIndex == 0 ? PAGE_EXISTS : NO_SUCH_PAGE;
     }
   }
   
