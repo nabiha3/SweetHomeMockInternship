@@ -131,6 +131,7 @@ public class FurnitureTable extends JTable implements View, Printable {
   private int                    furnitureInformationRow;
   private Popup                  furnitureInformationPopup;
   private AWTEventListener       informationPopupRemovalListener;
+  private FurnitureTableColumnModel furnitureColumnModel;
 
   /**
    * Creates a table that displays furniture of <code>home</code>.
@@ -154,7 +155,8 @@ public class FurnitureTable extends JTable implements View, Printable {
       setRowHeight(Math.round(getRowHeight() * resolutionScale));
     }
     setModel(new FurnitureTreeTableModel(home));
-    setColumnModel(new FurnitureTableColumnModel(home, preferences));
+    this.furnitureColumnModel = new FurnitureTableColumnModel(home, preferences);
+    setColumnModel(this.furnitureColumnModel);
     updateTableColumnsWidth(0);
     updateExpandedRows(home);
     updateTableSelectedFurniture(home);
@@ -730,7 +732,7 @@ public class FurnitureTable extends JTable implements View, Printable {
     // Create a printable column model from the column model of this table 
     // with printable renderers for each column
     DefaultTableColumnModel printableColumnModel = new DefaultTableColumnModel();
-    TableColumnModel columnModel = getColumnModel();
+    TableColumnModel columnModel = this.furnitureColumnModel;
     final DefaultTableCellRenderer defaultRenderer = new DefaultTableCellRenderer();
     defaultRenderer.setHorizontalAlignment(DefaultTableCellRenderer.CENTER);
     TableCellRenderer printableHeaderRenderer = new TableCellRenderer() {
