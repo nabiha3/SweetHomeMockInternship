@@ -472,7 +472,7 @@ public class HomePrintableComponent extends JComponent implements Printable {
           for (Level level : this.home.getLevels()) {
             if (level.isViewable()) {
               this.home.setSelectedLevel(level);
-              planPages += countPages((Printable)planView, dummyGraphics, pageFormat);
+              planPages += Math.max(1, countPages((Printable)planView, dummyGraphics, pageFormat));
             }
           }
         } finally {
