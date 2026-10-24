@@ -921,6 +921,9 @@ public class FurnitureTable extends JTable implements View, Printable {
           case HEIGHT : 
             writer.write(sizeFormat.format(copiedPiece.getHeight()));
             break;
+          case VOLUME :
+            writer.write(sizeFormat.format(copiedPiece.getVolume()));
+            break;
           case X : 
             writer.write(sizeFormat.format(copiedPiece.getX()));
             break;
