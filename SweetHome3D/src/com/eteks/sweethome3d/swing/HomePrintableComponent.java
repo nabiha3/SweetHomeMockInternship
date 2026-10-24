@@ -448,7 +448,8 @@ public class HomePrintableComponent extends JComponent implements Printable {
             }
 
             this.home.setSelectedLevel(level);
-            int levelPages = countPages((Printable)planView, dummyGraphics, pageFormat);
+            int levelPages = Math.max(
+                    1, countPages((Printable)planView, dummyGraphics, pageFormat));
 
             if (planPageIndex < levelPages) {
               route.planPage = true;
