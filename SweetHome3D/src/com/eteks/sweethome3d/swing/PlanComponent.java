@@ -1634,7 +1634,21 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
   protected List<Selectable> getPaintedItems() {
     return this.home.getSelectableViewableItems();
   }
-  
+
+  /**
+   * Returns the items printed for the currently selected level.
+   * Unlike getPaintedItems(), this method excludes items belonging to other levels.
+   */
+  private List<Selectable> getPrintedItems() {
+    List<Selectable> printedItems = new ArrayList<Selectable>();
+    for (Selectable item : getPaintedItems()) {
+      if (!(item instanceof Elevatable) || isViewableAtSelectedLevel((Elevatable)item)) {
+        printedItems.add(item);
+      }
+    }
+    return printedItems;
+  }
+
   /**
    * Returns the bounds of the given collection of <code>items</code>.
    */
