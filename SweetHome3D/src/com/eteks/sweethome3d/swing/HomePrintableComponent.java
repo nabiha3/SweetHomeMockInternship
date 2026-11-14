@@ -440,45 +440,15 @@ public class HomePrintableComponent extends JComponent implements Printable {
       int planPageIndex = page - furniturePages;
 
       if (printPlan) {
-        Level originalSelectedLevel = this.home.getSelectedLevel();
-        try {
-          for (Level level : this.home.getLevels()) {
-            if (!level.isViewable()) {
-              continue;
-            }
-
-            this.home.setSelectedLevel(level);
-            int levelPages = Math.max(
-                    1, countPages((Printable)planView, dummyGraphics, pageFormat));
-
-            if (planPageIndex < levelPages) {
-              route.planPage = true;
-              route.localPageIndex = planPageIndex;
-              route.level = level;
-              return route;
-            }
-
-            planPageIndex -= levelPages;
-          }
-        } finally {
-          this.home.setSelectedLevel(originalSelectedLevel);
+        int allLevelsPlanPages = countPages((Printable)planView, dummyGraphics, pageFormat);
+        if (planPageIndex < allLevelsPlanPages) {
+          route.planPage = true;
+          route.localPageIndex = planPageIndex;
+          return route;
         }
       }
 
-      int planPages = 0;
-      if (printPlan) {
-        Level originalSelectedLevel = this.home.getSelectedLevel();
-        try {
-          for (Level level : this.home.getLevels()) {
-            if (level.isViewable()) {
-              this.home.setSelectedLevel(level);
-              planPages += Math.max(1, countPages((Printable)planView, dummyGraphics, pageFormat));
-            }
-          }
-        } finally {
-          this.home.setSelectedLevel(originalSelectedLevel);
-        }
-      }
+      int planPages = printPlan ? countPages((Printable)planView, dummyGraphics, pageFormat) : 0;
 
       int view3DPageIndex = page - furniturePages - planPages;
       if (print3D && view3DPageIndex >= 0) {

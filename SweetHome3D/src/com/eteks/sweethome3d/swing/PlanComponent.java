@@ -2020,27 +2020,19 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
   @Override
   public int print(Graphics g, PageFormat pageFormat, int pageIndex) {
     Level originalLevel = this.home.getSelectedLevel();
-
     try {
       int currentPage = 0;
-
       for (Level level : this.home.getLevels()) {
         if (!level.isViewable()) {
           continue;
         }
-
         this.home.setSelectedLevel(level);
-
         int levelPageCount = getLevelPageCount(g, pageFormat);
-
         if (pageIndex < currentPage + levelPageCount) {
-          return printSelectedLevel(
-                  g, pageFormat, pageIndex - currentPage);
+          return printSelectedLevel(g, pageFormat, pageIndex - currentPage);
         }
-
         currentPage += levelPageCount;
       }
-
       return NO_SUCH_PAGE;
     } finally {
       this.home.setSelectedLevel(originalLevel);
@@ -2778,8 +2770,11 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
         1 / planScale, BasicStroke.CAP_SQUARE, BasicStroke.JOIN_BEVEL, 0, 
         new float [] {20 / planScale, 5 / planScale, 5 / planScale, 5 / planScale}, 4 / planScale);
 
-    paintCompass(g2D, selectedItems, planScale, foregroundColor, paintMode);
+    List<HomePieceOfFurniture> levelFurniture = this.sortedLevelFurniture != null
+            ? this.sortedLevelFurniture
+            : new ArrayList<HomePieceOfFurniture>();
 
+    paintCompass(g2D, selectedItems, planScale, foregroundColor, paintMode);
     checkCurrentThreadIsntInterrupted(paintMode);
     paintRooms(g2D, selectedItems, planScale, foregroundColor, paintMode);
 
@@ -2787,9 +2782,8 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
     paintWalls(g2D, selectedItems, planScale, backgroundColor, foregroundColor, paintMode);
     
     checkCurrentThreadIsntInterrupted(paintMode);
-    paintFurniture(g2D, this.sortedLevelFurniture, selectedItems, 
-        planScale, backgroundColor, foregroundColor, getFurnitureOutlineColor(), paintMode, true);
-    
+    paintFurniture(g2D, levelFurniture, selectedItems,
+            planScale, backgroundColor, foregroundColor, getFurnitureOutlineColor(), paintMode, true);
     checkCurrentThreadIsntInterrupted(paintMode);
     paintPolylines(g2D, this.home.getPolylines(), selectedItems, selectionOutlinePaint,  
         selectionColor, planScale, foregroundColor, paintMode);
@@ -2804,7 +2798,7 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
     paintRoomsNameAndArea(g2D, selectedItems, planScale, foregroundColor, paintMode);
 
     checkCurrentThreadIsntInterrupted(paintMode);
-    paintFurnitureName(g2D, this.sortedLevelFurniture, selectedItems, planScale, foregroundColor, paintMode);
+    paintFurnitureName(g2D, levelFurniture, selectedItems, planScale, foregroundColor, paintMode);
 
     checkCurrentThreadIsntInterrupted(paintMode);
     paintLabels(g2D, this.home.getLabels(), selectedItems, selectionOutlinePaint, dimensionLinesSelectionOutlineStroke, 
@@ -3049,13 +3043,18 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
    */
   private void paintRoomsNameAndArea(Graphics2D g2D, List<Selectable> selectedItems, float planScale, 
                                      Color foregroundColor, PaintMode paintMode) {
+    // The list may be reset by a level change made by the print thread while painting
+    List<Room> levelRooms = this.sortedLevelRooms;
+    if (levelRooms == null) {
+      return;
+    }
     g2D.setPaint(foregroundColor);
     Font previousFont = g2D.getFont();
-    for (Room room : this.sortedLevelRooms) { 
+    for (Room room : levelRooms) {
       boolean selectedRoom = selectedItems.contains(room);
       // In clipboard paint mode, paint room only if it is selected
       if (paintMode != PaintMode.CLIPBOARD
-          || selectedRoom) {
+              || selectedRoom) {
         float xRoomCenter = room.getXCenter();
         float yRoomCenter = room.getYCenter();
         String name = room.getName();
